@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-deb:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latestPUBLIC KEY BLOCK
 
     steps:
       - name: Checkout
