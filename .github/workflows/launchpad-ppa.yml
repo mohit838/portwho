@@ -43,9 +43,14 @@ jobs:
             dpkg-dev \
             debhelper \
             devscripts \
+            equivs \
             dput \
             fakeroot \
             gnupg
+
+      - name: Install Build-Depends from debian/control
+        run: |
+          sudo mk-build-deps --install --remove --tool "apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends -y" debian/control
 
       - name: Run tests
         run: bash tests/test_portwho.sh
