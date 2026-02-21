@@ -81,6 +81,16 @@ run_test_invalid_port() {
   assert_contains "$out" "invalid port" "invalid port error text"
 }
 
+run_test_extra_args() {
+  set +e
+  local out
+  out="$($SCRIPT 3000 extra 2>&1)"
+  local rc=$?
+  set -e
+  assert_eq "2" "$rc" "extra args exits 2"
+  assert_contains "$out" "expected exactly one port argument" "extra args error text"
+}
+
 run_test_ss_exact_port_match() {
   local tmp
   tmp="$(mktemp -d)"
@@ -99,6 +109,28 @@ run_test_ss_exact_port_match() {
     pass "ss excludes non-matching port"
   fi
 
+  rm -rf "$tmp"
+}
+
+run_test_missing_dependencies() {
+  local tmp
+  tmp="$(mktemp -d)"
+  mkdir -p "$tmp/bin"
+
+  cat > "$tmp/bin/bash" <<'MOCK'
+#!/usr/bin/bash
+exec /usr/bin/bash "$@"
+MOCK
+  chmod +x "$tmp/bin/bash"
+
+  set +e
+  local out
+  out="$(PATH="$tmp/bin" $SCRIPT 5050 2>&1)"
+  local rc=$?
+  set -e
+
+  assert_eq "127" "$rc" "missing dependencies exits 127"
+  assert_contains "$out" "missing dependency" "missing dependency error text"
   rm -rf "$tmp"
 }
 
@@ -158,7 +190,9 @@ run_test_kill_mode_without_pid_fails() {
 
 run_test_help
 run_test_invalid_port
+run_test_extra_args
 run_test_ss_exact_port_match
+run_test_missing_dependencies
 run_test_lsof_fallback_when_ss_missing
 run_test_kill_mode_from_ss
 run_test_kill_mode_without_pid_fails

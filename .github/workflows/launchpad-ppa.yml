@@ -46,6 +46,9 @@ jobs:
             fakeroot \
             gnupg
 
+      - name: Run tests
+        run: bash tests/test_portwho.sh
+
       - name: Import GPG key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
@@ -56,7 +59,9 @@ jobs:
             exit 1
           fi
 
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          if ! echo "$GPG_PRIVATE_KEY" | gpg --batch --import; then
+            echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
+          fi
 
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
@@ -84,7 +89,8 @@ GPGCONF
         run: |
           SERIES='${{ inputs.ubuntu_series }}'
           CURRENT_VERSION="$(dpkg-parsechangelog -SVersion)"
-          TARGET_VERSION="${CURRENT_VERSION}~${SERIES}1"
+          BASE_VERSION="${CURRENT_VERSION%%~*}"
+          TARGET_VERSION="${BASE_VERSION}~${SERIES}1"
           dch --newversion "$TARGET_VERSION" --distribution "$SERIES" "Launchpad build for $SERIES."
 
       - name: Build source package

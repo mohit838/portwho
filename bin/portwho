@@ -90,6 +90,12 @@ case "${1:-}" in
     ;;
 esac
 
+if [[ $# -ne 1 ]]; then
+  err "expected exactly one port argument"
+  usage
+  exit 2
+fi
+
 PORT="${1:-}"
 if ! is_port "$PORT"; then
   err "invalid port: ${PORT:-<empty>}"
@@ -99,12 +105,17 @@ fi
 
 OUT=""
 SOURCE=""
+if ! command -v ss >/dev/null 2>&1 && ! command -v lsof >/dev/null 2>&1; then
+  err "missing dependency: ss or lsof is required"
+  exit 127
+fi
+
 if command -v ss >/dev/null 2>&1; then
   OUT="$(find_with_ss "$PORT")"
   SOURCE="ss"
 fi
 
-if [[ -z "$OUT" ]]; then
+if [[ -z "$OUT" ]] && command -v lsof >/dev/null 2>&1; then
   OUT="$(find_with_lsof "$PORT")"
   SOURCE="lsof"
 fi
@@ -139,7 +150,7 @@ if [[ "$KILL_MODE" -eq 1 ]]; then
     exit 1
   fi
 
-  PID_LIST="$(printf '%s ' $PIDS | sed 's/ $//')"
+  PID_LIST="$(printf '%s\n' "$PIDS" | paste -sd' ' -)"
   echo "Candidate PID(s): $PID_LIST"
 
   if confirm "Send SIGTERM to PID(s) $PID_LIST?"; then
