@@ -24,13 +24,21 @@ portwho --help
 
 ## Install
 
-User install (default `~/.local/bin`):
+From Launchpad PPA (recommended for Ubuntu/Debian):
+
+```bash
+sudo add-apt-repository ppa:mohit838/portwho
+sudo apt update
+sudo apt install -y portwho
+```
+
+From source (user install, default `~/.local/bin`):
 
 ```bash
 ./install.sh
 ```
 
-System install (`/usr/local/bin`):
+From source (system install, `/usr/local/bin`):
 
 ```bash
 sudo ./install.sh --system
