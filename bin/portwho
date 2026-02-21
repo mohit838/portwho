@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+portwho - show which process is listening on a TCP/UDP port (Linux)
+
+Usage:
+  portwho <port>            Show listener info for a port
+  portwho --kill <port>     Ask confirmation then SIGTERM matching PID(s)
+  portwho -h|--help         Show help
+
+Examples:
+  portwho 3000
+  portwho --kill 5173
+USAGE
+}
+
+err() {
+  echo "portwho: $*" >&2
+}
+
+is_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && (( 1 <= $1 && $1 <= 65535 ))
+}
+
+confirm() {
+  local prompt="$1"
+  if [[ "${PORTWHO_ASSUME_YES:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  if [[ ! -t 0 ]]; then
+    err "confirmation required but stdin is not interactive"
+    return 1
+  fi
+
+  local ans
+  read -r -p "$prompt [y/N] " ans
+  [[ "${ans:-}" == "y" || "${ans:-}" == "Y" ]]
+}
+
+find_with_ss() {
+  local port="$1"
+  command -v ss >/dev/null 2>&1 || return 1
+
+  ss -H -lntuop 2>/dev/null | awk -v port="$port" '
+    {
+      local_addr = $5
+      gsub(/\[|\]/, "", local_addr)
+      split(local_addr, parts, ":")
+      if (parts[length(parts)] == port) {
+        print
+      }
+    }
+  '
+}
+
+find_with_lsof() {
+  local port="$1"
+  command -v lsof >/dev/null 2>&1 || return 1
+  lsof -nP -i :"$port" 2>/dev/null || true
+}
+
+pids_from_ss() {
+  grep -o 'pid=[0-9]\+' | cut -d= -f2 | sort -u
+}
+
+pids_from_lsof() {
+  awk 'NR > 1 { print $2 }' | sort -u
+}
+
+KILL_MODE=0
+PORT=""
+KILL_CMD="${PORTWHO_KILL_CMD:-kill}"
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 2
+fi
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  --kill)
+    KILL_MODE=1
+    shift
+    ;;
+esac
+
+PORT="${1:-}"
+if ! is_port "$PORT"; then
+  err "invalid port: ${PORT:-<empty>}"
+  err "port must be 1..65535"
+  exit 2
+fi
+
+OUT=""
+SOURCE=""
+if command -v ss >/dev/null 2>&1; then
+  OUT="$(find_with_ss "$PORT")"
+  SOURCE="ss"
+fi
+
+if [[ -z "$OUT" ]]; then
+  OUT="$(find_with_lsof "$PORT")"
+  SOURCE="lsof"
+fi
+
+if [[ -z "$OUT" ]]; then
+  echo "No listener found on port $PORT."
+  exit 0
+fi
+
+case "$SOURCE" in
+  ss)
+    echo "Listener(s) on port $PORT:"
+    echo "$OUT"
+    echo
+    echo "Tip: ss output includes process metadata like pid=1234 when permissions allow it."
+    ;;
+  lsof)
+    echo "$OUT"
+    ;;
+esac
+
+if [[ "$KILL_MODE" -eq 1 ]]; then
+  PIDS=""
+  if [[ "$SOURCE" == "ss" ]]; then
+    PIDS="$(printf '%s\n' "$OUT" | pids_from_ss)"
+  else
+    PIDS="$(printf '%s\n' "$OUT" | pids_from_lsof)"
+  fi
+
+  if [[ -z "$PIDS" ]]; then
+    err "could not determine PID safely; not killing"
+    exit 1
+  fi
+
+  PID_LIST="$(printf '%s ' $PIDS | sed 's/ $//')"
+  echo "Candidate PID(s): $PID_LIST"
+
+  if confirm "Send SIGTERM to PID(s) $PID_LIST?"; then
+    mapfile -t PID_ARRAY <<<"$PIDS"
+    "$KILL_CMD" -TERM "${PID_ARRAY[@]}"
+    echo "Sent SIGTERM to: $PID_LIST"
+  else
+    echo "Canceled."
+  fi
+fi
