@@ -89,8 +89,12 @@ jobs:
         run: |
           SERIES='${{ inputs.ubuntu_series }}'
           CURRENT_VERSION="$(dpkg-parsechangelog -SVersion)"
-          BASE_VERSION="${CURRENT_VERSION%%+ppa*}"
-          TARGET_VERSION="${BASE_VERSION}+ppa${GITHUB_RUN_NUMBER}~${SERIES}1"
+          BASE_VERSION="${CURRENT_VERSION%%~*}"
+          BASE_VERSION="${BASE_VERSION%%+ppa*}"
+          TARGET_VERSION="${BASE_VERSION}+ppa${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}~${SERIES}1"
+          if dpkg --compare-versions "$TARGET_VERSION" le "$CURRENT_VERSION"; then
+            TARGET_VERSION="${BASE_VERSION}+ppa${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.1~${SERIES}1"
+          fi
           dch --newversion "$TARGET_VERSION" --distribution "$SERIES" "Launchpad build for $SERIES."
 
       - name: Build source package
