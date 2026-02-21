@@ -65,10 +65,10 @@ jobs:
 
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
-          cat > ~/.gnupg/gpg.conf <<'GPGCONF'
-use-agent
-pinentry-mode loopback
-GPGCONF
+          printf '%s\n' \
+            'use-agent' \
+            'pinentry-mode loopback' \
+            > ~/.gnupg/gpg.conf
           echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
 
           if [[ -n "${GPG_PASSPHRASE:-}" ]]; then
