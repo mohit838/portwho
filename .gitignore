@@ -1,0 +1,25 @@
+# Debian build artifacts
+*.build
+*.buildinfo
+*.changes
+*.deb
+*.ddeb
+*.tar.*
+*.dsc
+
+# VitePress / Node
+node_modules/
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
+# Local temporary files
+*.log
+.DS_Store
+
+# Debian intermediate build files
+debian/.debhelper/
+debian/debhelper-build-stamp
+debian/files
+debian/*.substvars
+debian/portwho/

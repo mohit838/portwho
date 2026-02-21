@@ -1,0 +1,5 @@
+portwho (0.1.0) unstable; urgency=medium
+
+  * Initial Debian package.
+
+ -- Mohitul Islam <connect@mohitul-islam.com>  Sat, 21 Feb 2026 00:00:00 +0000

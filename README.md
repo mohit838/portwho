@@ -1,51 +1,45 @@
 # portwho
 
-`portwho` is a lightweight Linux CLI to identify which process is listening on a TCP/UDP port, with an optional safe kill flow.
+`portwho` is a lightweight Linux CLI to show which process is listening on a TCP/UDP port, with an optional safe kill flow.
+
+Repository: https://github.com/mohit838/portwho
+Maintainer: Mohitul Islam <connect@mohitul-islam.com>
 
 ## Features
 
 - Find listeners by port (`ss` first, `lsof` fallback)
-- Validate ports (`1..65535`)
-- Optional `--kill` mode with interactive confirmation
-- User install (`~/.local/bin`) or system install (`/usr/local/bin`)
+- Port validation (`1..65535`)
+- Optional `--kill` mode with confirmation
+- User and system installers
+- Debian packaging metadata included (`debian/`)
 
-## Requirements
+## Quick Start
 
-- Linux
-- `bash`
-- One of:
-  - `ss` (from `iproute2`)
-  - `lsof`
+```bash
+git clone https://github.com/mohit838/portwho.git
+cd portwho
+./install.sh
+portwho --help
+```
 
 ## Install
 
-### User install (recommended)
+User install (default `~/.local/bin`):
 
 ```bash
-git clone https://github.com/<your-org>/portwho.git
-cd portwho
 ./install.sh
 ```
 
-By default it installs to `~/.local/bin/portwho`.
-
-### System install
+System install (`/usr/local/bin`):
 
 ```bash
 sudo ./install.sh --system
 ```
 
-This installs to `/usr/local/bin/portwho`.
-
 ## Uninstall
 
 ```bash
 ./uninstall.sh
-```
-
-System uninstall:
-
-```bash
 sudo ./uninstall.sh --system
 ```
 
@@ -54,30 +48,43 @@ sudo ./uninstall.sh --system
 ```bash
 portwho 3000
 portwho --kill 3000
-portwho --help
 ```
 
-## Development
-
-Run tests:
+## Tests
 
 ```bash
 bash tests/test_portwho.sh
 ```
 
-## Project Layout
+## Build Debian Package
 
-- `bin/portwho`: main executable
-- `bin/portwho.sh`: backward-compatible wrapper
-- `install.sh`: installer
-- `uninstall.sh`: uninstaller
-- `tests/test_portwho.sh`: script tests
-- `docs/packaging-apt.md`: how to publish as an apt package
+```bash
+dpkg-buildpackage -us -uc -b
+```
 
-## License
+## Release Automation
 
-MIT. See `LICENSE`.
+- Tag push (`v*`) triggers `.github/workflows/deb-release.yml` to:
+  - run tests
+  - build `.deb`
+  - upload workflow artifacts
+  - attach artifacts to the GitHub release
+- Manual workflow `.github/workflows/launchpad-ppa.yml` publishes signed source packages to Launchpad PPA.
+
+Launchpad setup details are in `packaging/launchpad/README.md`.
+
+## Documentation Site (VitePress)
+
+```bash
+cd docs
+npm install
+npm run dev
+```
 
 ## Contributing
 
-See `docs/CONTRIBUTING.md`.
+See `CONTRIBUTING.md` and the docs site content under `docs/`.
+
+## License
+
+MIT (`LICENSE`).

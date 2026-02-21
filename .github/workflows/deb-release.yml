@@ -1,0 +1,54 @@
+name: Build Debian Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            dpkg-dev \
+            debhelper \
+            devscripts \
+            fakeroot
+
+      - name: Run tests
+        run: bash tests/test_portwho.sh
+
+      - name: Build binary package
+        run: dpkg-buildpackage -us -uc -b
+
+      - name: Collect package artifacts
+        run: |
+          mkdir -p dist
+          cp -v ../portwho_*.deb dist/
+          cp -v ../portwho_*.changes dist/
+          cp -v ../portwho_*.buildinfo dist/
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: portwho-deb-${{ github.ref_name }}
+          path: dist/*
+
+      - name: Attach package to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.changes
+            dist/*.buildinfo
+          generate_release_notes: true

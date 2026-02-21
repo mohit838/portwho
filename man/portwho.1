@@ -1,0 +1,48 @@
+.TH PORTWHO 1 "February 2026" "portwho 0.1.0" "User Commands"
+.SH NAME
+portwho \- show which process is listening on a TCP/UDP port
+.SH SYNOPSIS
+.B portwho
+.I <port>
+.br
+.B portwho
+.B --kill
+.I <port>
+.br
+.B portwho
+.B --help
+.SH DESCRIPTION
+.B portwho
+prints listener details for a port on Linux. It prefers
+.B ss
+and falls back to
+.B lsof
+when needed.
+.PP
+With
+.B --kill
+it asks for confirmation and then sends SIGTERM to matching process IDs.
+.SH OPTIONS
+.TP
+.B <port>
+Port number from 1 to 65535.
+.TP
+.B --kill <port>
+Enable kill mode with confirmation prompt.
+.TP
+.B -h, --help
+Show help.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Kill mode failed to resolve safe PID candidates.
+.TP
+.B 2
+Invalid usage or invalid port.
+.SH AUTHOR
+Mohitul Islam <connect@mohitul-islam.com>
+.SH HOMEPAGE
+https://github.com/mohit838/portwho

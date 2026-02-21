@@ -1,0 +1,18 @@
+Source: portwho
+Section: utils
+Priority: optional
+Maintainer: Mohitul Islam <connect@mohitul-islam.com>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/mohit838/portwho
+Vcs-Browser: https://github.com/mohit838/portwho
+Vcs-Git: https://github.com/mohit838/portwho.git
+
+Package: portwho
+Architecture: all
+Depends: ${misc:Depends}, iproute2 | lsof
+Description: show which process is listening on a TCP/UDP port
+ portwho is a lightweight CLI utility for Linux that shows listener
+ processes for a given port and can optionally send SIGTERM with
+ explicit user confirmation.
