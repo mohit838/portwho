@@ -4,15 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       ppa_owner:
-        description: 'Launchpad owner (user or team), e.g. mohit838'
+        description: "Launchpad owner (user or team), e.g. mohit838"
         required: true
-        default: 'mohit838'
+        default: "mohit838"
       ppa_name:
-        description: 'Launchpad PPA name, e.g. portwho'
+        description: "Launchpad PPA name, e.g. portwho"
         required: true
-        default: 'portwho'
+        default: "portwho"
       ubuntu_series:
-        description: 'Ubuntu series for changelog distribution'
+        description: "Ubuntu series for changelog distribution"
         required: true
         type: choice
         options:
@@ -37,6 +37,7 @@ jobs:
 
       - name: Install upload dependencies
         run: |
+          set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y \
             build-essential \
@@ -46,89 +47,159 @@ jobs:
             equivs \
             dput \
             fakeroot \
-            gnupg
+            gnupg \
+            ca-certificates
+
+      # ---- FIX 1: patch debian/control if it has build-essential:native ----
+      - name: Patch debian/control Build-Depends (PPA-friendly)
+        run: |
+          set -euxo pipefail
+          if grep -qE 'build-essential:native' debian/control; then
+            echo "Found build-essential:native -> patching to build-essential"
+            sed -i 's/build-essential:native/build-essential/g' debian/control
+          fi
+          echo "---- debian/control (Build-Depends excerpt) ----"
+          awk '
+            BEGIN{show=0}
+            /^Build-Depends:/{show=1}
+            show{print}
+            show && /^[A-Za-z-]+:/{if($1!="Build-Depends:") exit}
+          ' debian/control || true
 
       - name: Install Build-Depends from debian/control
         run: |
-          sudo mk-build-deps --install --remove --tool "apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends -y" debian/control
+          set -euxo pipefail
+          sudo mk-build-deps --install --remove \
+            --tool "apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends -y" \
+            debian/control
 
       - name: Run tests
-        run: bash tests/test_portwho.sh
+        run: |
+          set -euxo pipefail
+          bash tests/test_portwho.sh
 
+      # ---- Import GPG key ----
       - name: Import GPG key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
         run: |
+          set -euxo pipefail
+
           if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
             echo "Missing secret: LAUNCHPAD_GPG_PRIVATE_KEY" >&2
             exit 1
           fi
 
+          # Import key (supports raw armored or base64)
           if ! echo "$GPG_PRIVATE_KEY" | gpg --batch --import; then
             echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
           fi
 
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
+
           printf '%s\n' \
             'use-agent' \
             'pinentry-mode loopback' \
             > ~/.gnupg/gpg.conf
+
           echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
 
+          gpgconf --kill gpg-agent || true
+          gpgconf --launch gpg-agent
+
+          # Warm up (optional, but helps detect passphrase issues early)
           if [[ -n "${GPG_PASSPHRASE:-}" ]]; then
             echo "$GPG_PASSPHRASE" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 --list-secret-keys >/dev/null
           fi
 
+      # ---- FIX 2: derive fingerprint even if you only stored LONG KEY ID ----
       - name: Resolve signing key fingerprint
         id: gpg
         env:
-          DEB_SIGN_KEYID: ${{ secrets.DEB_SIGN_KEYID }}
+          # You said you already have long key id; put it in this secret (16-hex).
+          # Example: 89ABCDEF01234567
+          LONG_KEY_ID: ${{ secrets.DEB_SIGN_KEYID }}
+          # Optional: if you ALSO have DEBSIGN_KEYID, we will use it as fallback
+          LONG_KEY_ID_FALLBACK: ${{ secrets.DEBSIGN_KEYID }}
         run: |
-          KEY_FPR="${DEB_SIGN_KEYID:-}"
-          if [[ -z "$KEY_FPR" ]]; then
-            KEY_FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ {print $10; exit}')"
+          set -euxo pipefail
+
+          KEY="${LONG_KEY_ID:-}"
+          if [[ -z "$KEY" ]]; then
+            KEY="${LONG_KEY_ID_FALLBACK:-}"
           fi
-          if [[ -z "$KEY_FPR" ]]; then
-            echo "Unable to discover secret key fingerprint" >&2
+
+          if [[ -n "$KEY" ]]; then
+            # Normalize: remove spaces, force uppercase
+            KEY="$(echo "$KEY" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
+          fi
+
+          # If KEY is provided, try to resolve its fingerprint
+          if [[ -n "$KEY" ]]; then
+            # Ask gpg for the fpr of that key (works for long key id, short id, email, etc.)
+            FPR="$(gpg --batch --with-colons --fingerprint "$KEY" 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
+          else
+            FPR=""
+          fi
+
+          # If still empty, just grab the first secret key fingerprint
+          if [[ -z "${FPR:-}" ]]; then
+            FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ {print $10; exit}')"
+          fi
+
+          if [[ -z "${FPR:-}" ]]; then
+            echo "Unable to discover secret key fingerprint after import." >&2
+            gpg --list-secret-keys --keyid-format=long || true
             exit 1
           fi
-          echo "key_fpr=$KEY_FPR" >> "$GITHUB_OUTPUT"
+
+          # Basic sanity check: should be 40 hex
+          if ! echo "$FPR" | grep -Eq '^[0-9A-F]{40}$'; then
+            echo "Resolved fingerprint looks wrong: $FPR" >&2
+            exit 1
+          fi
+
+          echo "key_fpr=$FPR" >> "$GITHUB_OUTPUT"
+          echo "Resolved signing fingerprint: $FPR"
 
       - name: Prepare changelog for selected Ubuntu series
         run: |
+          set -euxo pipefail
           SERIES='${{ inputs.ubuntu_series }}'
           CURRENT_VERSION="$(dpkg-parsechangelog -SVersion)"
 
-          # Remove any old ~series suffix or +ppa suffix if present
           BASE_VERSION="${CURRENT_VERSION%%~*}"
           BASE_VERSION="${BASE_VERSION%%+ppa*}"
 
-          # Make a monotonic PPA version that always increases
           TARGET_VERSION="${BASE_VERSION}+ppa${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}~${SERIES}1"
 
-          # Extra safety: if somehow it's not greater, bump once more
           if dpkg --compare-versions "$TARGET_VERSION" le "$CURRENT_VERSION"; then
             TARGET_VERSION="${BASE_VERSION}+ppa${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.1~${SERIES}1"
           fi
 
           dch --newversion "$TARGET_VERSION" --distribution "$SERIES" "Launchpad build for $SERIES."
 
+      # ---- FIX 3: Pass fingerprint to -k (removes warning + correct) ----
       - name: Build source package
         env:
           KEY_FPR: ${{ steps.gpg.outputs.key_fpr }}
+          # Helps other tools too (not required, but harmless)
+          DEB_SIGN_KEYID: ${{ steps.gpg.outputs.key_fpr }}
+          DEBSIGN_KEYID: ${{ steps.gpg.outputs.key_fpr }}
         run: |
-          export DEB_SIGN_KEYID="$KEY_FPR"
-          dpkg-buildpackage -S -sa -d
+          set -euxo pipefail
+          dpkg-buildpackage -S -sa -d -k"$KEY_FPR"
 
       - name: Upload source artifacts from CI run
         run: |
+          set -euxo pipefail
           mkdir -p dist
           cp -v ../portwho_*.dsc dist/
           cp -v ../portwho_*.changes dist/
-          cp -v ../portwho_*.tar.* dist/
-          cp -v ../portwho_*.buildinfo dist/
+          cp -v ../portwho_*.tar.* dist/ || true
+          cp -v ../portwho_*.buildinfo dist/ || true
 
       - name: Attach source package artifact
         uses: actions/upload-artifact@v4
@@ -141,5 +212,6 @@ jobs:
           OWNER: ${{ inputs.ppa_owner }}
           PPA: ${{ inputs.ppa_name }}
         run: |
+          set -euxo pipefail
           CHANGES_FILE="$(ls -1 ../portwho_*_source.changes | head -n 1)"
           dput "ppa:${OWNER}/${PPA}" "$CHANGES_FILE"
