@@ -81,15 +81,20 @@ jobs:
             echo "$GPG_PASSPHRASE" | gpg --batch --pinentry-mode loopback --passphrase-fd 0 --list-secret-keys >/dev/null
           fi
 
-      - name: Derive signing key id
+      - name: Resolve signing key fingerprint
         id: gpg
+        env:
+          DEB_SIGN_KEYID: ${{ secrets.DEB_SIGN_KEYID }}
         run: |
-          KEY_ID="$(gpg --list-secret-keys --keyid-format=long | awk '/^sec/{print $2}' | awk -F/ 'NR==1{print $2}')"
-          if [[ -z "$KEY_ID" ]]; then
-            echo "Unable to discover secret key id" >&2
+          KEY_FPR="${DEB_SIGN_KEYID:-}"
+          if [[ -z "$KEY_FPR" ]]; then
+            KEY_FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ {print $10; exit}')"
+          fi
+          if [[ -z "$KEY_FPR" ]]; then
+            echo "Unable to discover secret key fingerprint" >&2
             exit 1
           fi
-          echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+          echo "key_fpr=$KEY_FPR" >> "$GITHUB_OUTPUT"
 
       - name: Prepare changelog for selected Ubuntu series
         run: |
@@ -112,12 +117,10 @@ jobs:
 
       - name: Build source package
         env:
-          KEY_ID: ${{ steps.gpg.outputs.key_id }}
+          KEY_FPR: ${{ steps.gpg.outputs.key_fpr }}
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
-          dpkg-query -W -f='${Package} ${Version}\n' build-essential
-          dpkg-buildpackage -S -sa -k"$KEY_ID"
+          export DEB_SIGN_KEYID="$KEY_FPR"
+          dpkg-buildpackage -S -sa -d
 
       - name: Upload source artifacts from CI run
         run: |
