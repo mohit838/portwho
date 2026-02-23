@@ -24,13 +24,19 @@ portwho --help
 
 ## Install
 
-From Launchpad PPA (recommended for Ubuntu/Debian):
+From Launchpad PPA (Ubuntu/Debian):
+
+First, confirm the real PPA slug on Launchpad:
+
+- `https://launchpad.net/~<owner>/+archive/ubuntu/<ppa-name>`
 
 ```bash
-sudo add-apt-repository ppa:mohit838/portwho
+sudo add-apt-repository ppa:<owner>/<ppa-name>
 sudo apt update
 sudo apt install -y portwho
 ```
+
+If you get `ppa '<owner>/<ppa-name>' not found`, the PPA is not created yet or the slug is wrong.
 
 From source (user install, default `~/.local/bin`):
 
