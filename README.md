@@ -38,6 +38,14 @@ sudo apt install -y portwho
 
 If you get `ppa '<owner>/<ppa-name>' not found`, the PPA is not created yet or the slug is wrong.
 
+From local apt repository (Ubuntu/Debian, apt-style install with sudo):
+
+```bash
+sudo ./install-apt.sh
+```
+
+This provides `sudo apt install portwho` behavior via a local repository at `/opt/portwho-apt-repo`.
+
 From source (user install, default `~/.local/bin`):
 
 ```bash
@@ -53,6 +61,7 @@ sudo ./install.sh --system
 ## Uninstall
 
 ```bash
+sudo ./uninstall-apt.sh
 ./uninstall.sh
 sudo ./uninstall.sh --system
 ```

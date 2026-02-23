@@ -1,6 +1,6 @@
 SHELL := /usr/bin/env bash
 
-.PHONY: all test install uninstall install-system uninstall-system docs-dev docs-build deb
+.PHONY: all test install uninstall install-system uninstall-system install-apt uninstall-apt docs-dev docs-build deb
 
 all:
 	@true
@@ -19,6 +19,12 @@ install-system:
 
 uninstall-system:
 	sudo ./uninstall.sh --system
+
+install-apt:
+	sudo ./install-apt.sh
+
+uninstall-apt:
+	sudo ./uninstall-apt.sh
 
 docs-dev:
 	cd docs && npm install && npm run dev

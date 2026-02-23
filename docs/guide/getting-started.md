@@ -22,3 +22,11 @@ sudo ./install.sh --system
 ```
 
 System path: `/usr/local/bin/portwho`
+
+## Install with apt style (sudo)
+
+```bash
+sudo ./install-apt.sh
+```
+
+This builds a `.deb`, creates a local apt repository, and installs `portwho` through apt.

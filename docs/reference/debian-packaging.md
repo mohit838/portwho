@@ -10,6 +10,14 @@ dpkg-buildpackage -us -uc -b
 
 Generated `.deb` files are placed in the parent directory.
 
+## Local apt-style install
+
+```bash
+sudo ./install-apt.sh
+```
+
+This script builds the package, indexes a local apt repository, and installs `portwho` with apt.
+
 ## Package contents
 
 - `usr/bin/portwho`
