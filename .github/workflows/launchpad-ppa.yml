@@ -69,15 +69,21 @@ jobs:
           VERSION="$(dpkg-parsechangelog -SVersion)+ppa${GITHUB_RUN_NUMBER}~${SERIES}1"
           dch --newversion "$VERSION" --distribution "$SERIES" "PPA build for $SERIES"
 
-      - name: Build and Sign
+      - name: Build and Sign source package
         env:
           KEY_FPR: ${{ steps.gpg.outputs.key_fpr }}
           GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
         run: |
+          set -euxo pipefail
+          
+          # Make the passphrase available to the wrapper
           export GPG_PASSPHRASE
-          # Build unsigned
+
+          # 1. BUILD UNSIGNED (This avoids the /dev/tty error entirely)
           dpkg-buildpackage -S -sa -d -us -uc
-          # Sign specifically with debsign
+
+          # 2. SIGN MANUALLY (debsign is CI-friendly)
+          # It will look for the .changes file in the parent directory
           debsign -p"$HOME/.gnupg/gpg-wrapper.sh" -k"$KEY_FPR" ../portwho_*_source.changes
 
       - name: Upload to Launchpad
