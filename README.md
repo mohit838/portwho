@@ -75,6 +75,8 @@ dpkg-buildpackage -us -uc -b
 - Tag push (`v*`) triggers `.github/workflows/deb-release.yml` to:
   - run tests
   - build `.deb`
+  - run `lintian` quality checks
+  - install package and run `portwho --help` smoke test
   - upload workflow artifacts
   - attach artifacts to the GitHub release
 - Manual workflow `.github/workflows/launchpad-ppa.yml` publishes signed source packages to Launchpad PPA.

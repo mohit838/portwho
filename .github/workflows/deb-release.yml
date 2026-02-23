@@ -4,13 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build-deb:
-    runs-on: ubuntu-latestPUBLIC KEY BLOCK
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -18,21 +19,41 @@ jobs:
 
       - name: Install packaging dependencies
         run: |
+          set -euxo pipefail
           sudo apt-get update
           sudo apt-get install -y \
+            build-essential \
             dpkg-dev \
             debhelper \
             devscripts \
-            fakeroot
+            fakeroot \
+            lintian
 
       - name: Run tests
-        run: bash tests/test_portwho.sh
+        run: |
+          set -euxo pipefail
+          bash tests/test_portwho.sh
 
       - name: Build binary package
-        run: dpkg-buildpackage -us -uc -b
+        run: |
+          set -euxo pipefail
+          dpkg-buildpackage -us -uc -b
+
+      - name: Lint Debian package
+        run: |
+          set -euxo pipefail
+          lintian --display-info --fail-on warning ../portwho_*.deb
+
+      - name: Smoke test package install
+        run: |
+          set -euxo pipefail
+          sudo dpkg -i ../portwho_*.deb || sudo apt-get -f install -y
+          command -v portwho
+          portwho --help >/dev/null
 
       - name: Collect package artifacts
         run: |
+          set -euxo pipefail
           mkdir -p dist
           cp -v ../portwho_*.deb dist/
           cp -v ../portwho_*.changes dist/
