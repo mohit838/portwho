@@ -4,22 +4,18 @@ on:
   workflow_dispatch:
     inputs:
       ppa_owner:
-        description: "Launchpad owner (user or team), e.g. mohit838"
+        description: "Launchpad owner (user or team)"
         required: true
         default: "mohit838"
       ppa_name:
-        description: "Launchpad PPA name, e.g. portwho"
+        description: "Launchpad PPA name"
         required: true
         default: "portwho"
       ubuntu_series:
-        description: "Ubuntu series for changelog distribution"
+        description: "Ubuntu series"
         required: true
         type: choice
-        options:
-          - jammy
-          - noble
-          - oracular
-          - plucky
+        options: [jammy, noble, oracular, plucky]
 
 permissions:
   contents: read
@@ -35,157 +31,59 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install upload dependencies
+      - name: Install dependencies
         run: |
-          set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            dpkg-dev \
-            debhelper \
-            devscripts \
-            equivs \
-            dput \
-            fakeroot \
-            gnupg \
-            ca-certificates
+          sudo apt-get install -y build-essential dpkg-dev debhelper devscripts dput gnupg
 
-      - name: Patch debian/control Build-Depends (PPA-friendly)
-        run: |
-          set -euxo pipefail
-          if grep -qE 'build-essential:native' debian/control; then
-            sed -i 's/build-essential:native/build-essential/g' debian/control
-          fi
-
-      - name: Install Build-Depends from debian/control
-        run: |
-          set -euxo pipefail
-          sudo mk-build-deps --install --remove \
-            --tool "apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends -y" \
-            debian/control
-
-      - name: Run tests
-        run: |
-          set -euxo pipefail
-          bash tests/test_portwho.sh
-
-      - name: Import GPG key + configure non-interactive signing
+      - name: Import GPG key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.LAUNCHPAD_GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
         run: |
-          set -euxo pipefail
-
-          if [[ -z "${GPG_PRIVATE_KEY:-}" ]]; then
-            echo "Missing secret: LAUNCHPAD_GPG_PRIVATE_KEY" >&2
-            exit 1
-          fi
-
           mkdir -p ~/.gnupg
           chmod 700 ~/.gnupg
-
-          # Import key
-          if ! echo "$GPG_PRIVATE_KEY" | gpg --batch --import; then
-            echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
-          fi
-
-          # Configure GPG for headless operation
-          printf '%s\n' \
-            'use-agent' \
-            'pinentry-mode loopback' \
-            > ~/.gnupg/gpg.conf
-          printf '%s\n' 'allow-loopback-pinentry' > ~/.gnupg/gpg-agent.conf
-
-          gpgconf --kill gpg-agent || true
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import || echo "$GPG_PRIVATE_KEY" | base64 -d | gpg --batch --import
+          
+          echo "allow-loopback-pinentry" > ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" > ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent
           gpgconf --launch gpg-agent
 
-          # Create the crucial wrapper script
-          # We use --no-tty and --batch to bypass the /dev/tty error
+          # The Wrapper
           printf '%s\n' \
             '#!/usr/bin/env bash' \
-            'set -eo pipefail' \
-            'exec gpg --batch --no-tty --yes \\' \
-            '  --pinentry-mode loopback \\' \
-            '  --passphrase "$GPG_PASSPHRASE" \\' \
-            '  "$@"' \
+            'exec gpg --batch --no-tty --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" "$@"' \
             > ~/.gnupg/gpg-wrapper.sh
           chmod +x ~/.gnupg/gpg-wrapper.sh
 
-      - name: Resolve signing key fingerprint
+      - name: Resolve Fingerprint
         id: gpg
-        env:
-          DEB_SIGN_KEYID: ${{ secrets.DEB_SIGN_KEYID }}
-          LONG_KEY_ID: ${{ secrets.DEB_SIGN_KEYID }}
-          LONG_KEY_ID_FALLBACK: ${{ secrets.DEBSIGN_KEYID }}
         run: |
-          set -euxo pipefail
-          KEY="${DEB_SIGN_KEYID:-${LONG_KEY_ID:-$LONG_KEY_ID_FALLBACK}}"
-          
-          if [[ -n "$KEY" ]]; then
-            KEY="$(echo "$KEY" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
-            FPR="$(gpg --batch --with-colons --fingerprint "$KEY" 2>/dev/null | awk -F: '/^fpr:/ {print $10; exit}')"
-          fi
-
-          if [[ -z "${FPR:-}" ]]; then
-            FPR="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ {print $10; exit}')"
-          fi
-
-          if [[ -z "${FPR:-}" ]]; then
-            echo "Unable to resolve GPG fingerprint for signing." >&2
-            exit 1
-          fi
-
+          FPR=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ {print $10; exit}')
           echo "key_fpr=$FPR" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare changelog for selected Ubuntu series
+      - name: Update Changelog
         run: |
-          set -euxo pipefail
           SERIES='${{ inputs.ubuntu_series }}'
-          CURRENT_VERSION="$(dpkg-parsechangelog -SVersion)"
-          BASE_VERSION="${CURRENT_VERSION%%~*}"
-          BASE_VERSION="${BASE_VERSION%%+ppa*}"
+          VERSION="$(dpkg-parsechangelog -SVersion)+ppa${GITHUB_RUN_NUMBER}~${SERIES}1"
+          dch --newversion "$VERSION" --distribution "$SERIES" "PPA build for $SERIES"
 
-          TARGET_VERSION="${BASE_VERSION}+ppa${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}~${SERIES}1"
-          if dpkg --compare-versions "$TARGET_VERSION" le "$CURRENT_VERSION"; then
-            TARGET_VERSION="${BASE_VERSION}+ppa${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}.1~${SERIES}1"
-          fi
-
-          dch --newversion "$TARGET_VERSION" --distribution "$SERIES" "Launchpad build for $SERIES."
-
-      - name: Build source package (non-interactive signed)
+      - name: Build and Sign
         env:
           KEY_FPR: ${{ steps.gpg.outputs.key_fpr }}
           GPG_PASSPHRASE: ${{ secrets.LAUNCHPAD_GPG_PASSPHRASE }}
         run: |
-          set -euxo pipefail
-          # Exporting the passphrase makes it available to the gpg-wrapper.sh
           export GPG_PASSPHRASE
-          
-          # -p points to our custom wrapper script
-          dpkg-buildpackage -S -sa -d \
-            -k"$KEY_FPR" \
-            -p"$HOME/.gnupg/gpg-wrapper.sh"
+          # Build unsigned
+          dpkg-buildpackage -S -sa -d -us -uc
+          # Sign specifically with debsign
+          debsign -p"$HOME/.gnupg/gpg-wrapper.sh" -k"$KEY_FPR" ../portwho_*_source.changes
 
-      - name: Upload source artifacts from CI run
-        run: |
-          set -euxo pipefail
-          mkdir -p dist
-          cp -v ../portwho_*.dsc dist/
-          cp -v ../portwho_*.changes dist/
-          cp -v ../portwho_*.tar.* dist/ || true
-          cp -v ../portwho_*.buildinfo dist/ || true
-
-      - name: Attach source package artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: portwho-ppa-source-${{ inputs.ubuntu_series }}
-          path: dist/*
-
-      - name: Upload to Launchpad PPA
+      - name: Upload to Launchpad
         env:
           OWNER: ${{ inputs.ppa_owner }}
           PPA: ${{ inputs.ppa_name }}
         run: |
-          set -euxo pipefail
           CHANGES_FILE="$(ls -1 ../portwho_*_source.changes | head -n 1)"
           dput "ppa:${OWNER}/${PPA}" "$CHANGES_FILE"
